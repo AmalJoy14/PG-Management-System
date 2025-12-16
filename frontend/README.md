@@ -1,16 +1,107 @@
-# React + Vite
+# PG Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A simple MVP PG (Paying Guest) Management System frontend built with React + Vite.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Owner Dashboard
+- View list of tenants
+- Add new tenants
+- View rent/payment status for each tenant
+- View and manage maintenance complaints
+- Update complaint status (pending/resolved)
 
-## React Compiler
+### Tenant Dashboard
+- View own profile details
+- View rent/payment history
+- Raise maintenance complaints
+- View status of submitted complaints
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+## Tech Stack
 
-## Expanding the ESLint configuration
+- **Frontend Framework**: React 18 + Vite
+- **Routing**: React Router v6
+- **HTTP Client**: Axios
+- **Styling**: CSS Modules
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Getting Started
+
+### Prerequisites
+- Node.js (v16 or higher)
+- npm or yarn
+
+### Installation
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Configure the API base URL in `src/api/axios.js`:
+```javascript
+const API_BASE_URL = 'http://localhost:5000/api' // Update with your backend URL
+```
+
+3. Start the development server:
+```bash
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`
+
+## API Endpoints Expected
+
+The frontend expects the following REST API endpoints from the backend:
+
+### Authentication
+- `POST /api/auth/login` - Login user
+- `POST /api/auth/signup` - Register new user
+
+### Tenants (Owner only)
+- `GET /api/tenants` - Get all tenants
+- `POST /api/tenants` - Add new tenant
+
+### Payments
+- `GET /api/payments` - Get all payments (Owner)
+- `GET /api/payments/my-payments` - Get own payment history (Tenant)
+
+### Complaints
+- `GET /api/complaints` - Get all complaints (Owner)
+- `GET /api/complaints/my-complaints` - Get own complaints (Tenant)
+- `POST /api/complaints` - Create new complaint (Tenant)
+- `PATCH /api/complaints/:id` - Update complaint status (Owner)
+
+## Project Structure
+
+```
+src/
+├── api/
+│   └── axios.js              # Axios instance with interceptors
+├── components/
+│   ├── ProtectedRoute.jsx    # Route protection component
+│   └── Sidebar.jsx           # Navigation sidebar
+├── context/
+│   └── AuthContext.jsx       # Authentication context
+├── pages/
+│   ├── Login.jsx             # Login page
+│   ├── Signup.jsx            # Signup page
+│   ├── OwnerDashboard.jsx    # Owner dashboard
+│   └── TenantDashboard.jsx   # Tenant dashboard
+├── App.jsx                   # Main app component with routes
+└── main.jsx                  # Application entry point
+```
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+The built files will be in the `dist` directory.
+
+## Notes
+
+- All API calls include JWT token in Authorization header
+- Token and user data are stored in localStorage
+- Role-based routing ensures users only access authorized pages
+- Loading states and error handling are implemented throughout

@@ -1,9 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import connectDB from "./utils/db.js";
 import dotenv from 'dotenv';
 
 import authRoutes from "./Routes/authRoutes.js";
+import complaintRoutes from "./Routes/complaintRoutes.js";
+import paymentRoutes from "./Routes/paymentRoutes.js";
 
 dotenv.config();
 
@@ -17,8 +20,11 @@ const corsOptions = {
 
 // Middleware
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors(corsOptions));
 app.use("/api", authRoutes);
+app.use("/api", complaintRoutes);
+app.use("/api", paymentRoutes);
 
 connectDB().then(() =>{
     app.listen(PORT, () => {
