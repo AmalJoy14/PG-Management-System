@@ -73,6 +73,20 @@ const TenantDashboard = () => {
     }
   }
 
+  const handlePayment = async (paymentId) => {
+    setLoading(true)
+    setError("")
+    try {
+      await axiosInstance.patch(`/payments/${paymentId}`, { status: "paid" })
+      alert("Payment successful!")
+      fetchPayments()
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to process payment")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className={styles.container}>
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs} />
@@ -126,22 +140,41 @@ const TenantDashboard = () => {
                   <thead>
                     <tr>
                       <th>Month</th>
+                      <th>Amount</th>
+                      <th>Due Date</th>
                       <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payments.length === 0 ? (
                       <tr>
-                        <td colSpan="2" className={styles.empty}>
+                        <td colSpan="5" className={styles.empty}>
                           No payment records found
                         </td>
                       </tr>
                     ) : (
                       payments.map((payment) => (
-                        <tr key={payment.id}>
+                        <tr key={payment._id || payment.id}>
                           <td>{payment.month}</td>
+                          <td>₹{payment.amount}</td>
+                          <td>{new Date(payment.dueDate).toLocaleDateString()}</td>
                           <td>
                             <span className={`${styles.badge} ${styles[payment.status]}`}>{payment.status}</span>
+                          </td>
+                          <td>
+                            {payment.status !== "paid" && (
+                              <button
+                                onClick={() => handlePayment(payment._id || payment.id)}
+                                className={styles.payButton}
+                                disabled={loading}
+                              >
+                                Pay Now
+                              </button>
+                            )}
+                            {payment.status === "paid" && (
+                              <span className={styles.paidText}>✓ Paid</span>
+                            )}
                           </td>
                         </tr>
                       ))

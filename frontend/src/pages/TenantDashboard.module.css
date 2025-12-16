@@ -160,6 +160,43 @@
   color: #856404;
 }
 
+.badge.overdue {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.badge.resolved {
+  background: #d4edda;
+  color: #155724;
+}
+
+.payButton {
+  padding: 8px 16px;
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.payButton:hover {
+  background: #229954;
+}
+
+.payButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.paidText {
+  color: #27ae60;
+  font-weight: 600;
+  font-size: 14px;
+}
+
 .badge.resolved {
   background: #d4edda;
   color: #155724;

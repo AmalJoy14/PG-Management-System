@@ -13,13 +13,22 @@ const OwnerDashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [showAddTenant, setShowAddTenant] = useState(false)
+  const [selectedTenant, setSelectedTenant] = useState("")
+  const [selectedMonth, setSelectedMonth] = useState("")
+  const [onlyUnpaid, setOnlyUnpaid] = useState(true)
+  const [selectedComplaintTenant, setSelectedComplaintTenant] = useState("")
+  const [onlyPendingComplaints, setOnlyPendingComplaints] = useState(true)
   const [newTenant, setNewTenant] = useState({
     name: "",
     email: "",
     password: "",
     roomNumber: "",
     rentAmount: "",
+    joinDate: "",
   })
+  const [rooms, setRooms] = useState([])
+  const [useCustomRoom, setUseCustomRoom] = useState(false)
+  const [customRoom, setCustomRoom] = useState("")
 
   const tabs = [
     { id: "tenants", label: "Tenants" },
@@ -31,6 +40,18 @@ const OwnerDashboard = () => {
     fetchData()
   }, [activeTab])
 
+  useEffect(() => {
+    if (activeTab === "payments") {
+      fetchData()
+    }
+  }, [selectedTenant, selectedMonth, onlyUnpaid])
+
+  useEffect(() => {
+    if (activeTab === "complaints") {
+      fetchData()
+    }
+  }, [selectedComplaintTenant, onlyPendingComplaints])
+
   const fetchData = async () => {
     setLoading(true)
     setError("")
@@ -38,11 +59,37 @@ const OwnerDashboard = () => {
       if (activeTab === "tenants") {
         const response = await axiosInstance.get("/tenants")
         setTenants(response.data.tenants || [])
+        // Load rooms for dropdown
+        try {
+          const roomsRes = await axiosInstance.get("/rooms")
+          setRooms(roomsRes.data || [])
+        } catch (e) {
+          // non-fatal for tenants view
+        }
       } else if (activeTab === "payments") {
-        const response = await axiosInstance.get("/payments")
+        // Load tenants for dropdown
+        const tenantsResponse = await axiosInstance.get("/tenants")
+        setTenants(tenantsResponse.data.tenants || [])
+        
+        // Load payments with optional tenant filter
+        const params = new URLSearchParams()
+        if (selectedTenant) params.append("tenantId", selectedTenant)
+        if (selectedMonth) params.append("month", selectedMonth)
+        if (onlyUnpaid) params.append("unpaid", "1")
+        const url = params.toString() ? `/payments?${params.toString()}` : "/payments"
+        const response = await axiosInstance.get(url)
         setPayments(response.data)
       } else if (activeTab === "complaints") {
-        const response = await axiosInstance.get("/complaints")
+        // Load tenants for dropdown
+        const tenantsResponse = await axiosInstance.get("/tenants")
+        setTenants(tenantsResponse.data.tenants || [])
+
+        const params = new URLSearchParams()
+        if (selectedComplaintTenant) params.append("tenantId", selectedComplaintTenant)
+        if (onlyPendingComplaints) params.append("status", "pending")
+        const url = params.toString() ? `/complaints?${params.toString()}` : "/complaints"
+
+        const response = await axiosInstance.get(url)
         setComplaints(response.data)
       }
     } catch (err) {
@@ -58,8 +105,14 @@ const OwnerDashboard = () => {
     setError("")
 
     try {
-      await axiosInstance.post("/add-tenant", newTenant)
-      setNewTenant({ name: "", email: "", password: "", roomNumber: "", rentAmount: "" })
+      const payload = {
+        ...newTenant,
+        roomNumber: useCustomRoom ? customRoom : newTenant.roomNumber,
+      }
+      await axiosInstance.post("/add-tenant", payload)
+      setNewTenant({ name: "", email: "", password: "", roomNumber: "", rentAmount: "", joinDate: "" })
+      setUseCustomRoom(false)
+      setCustomRoom("")
       setShowAddTenant(false)
       fetchData()
     } catch (err) {
@@ -75,6 +128,20 @@ const OwnerDashboard = () => {
       fetchData()
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update complaint")
+    }
+  }
+
+  const handleGeneratePayments = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const response = await axiosInstance.post("/payments/generate-all")
+      alert(response.data.message)
+      fetchData()
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to generate payments")
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -131,14 +198,43 @@ const OwnerDashboard = () => {
                     minLength="6"
                     className={styles.input}
                   />
-                  <input
-                    type="text"
-                    placeholder="Room Number"
-                    value={newTenant.roomNumber}
-                    onChange={(e) => setNewTenant({ ...newTenant, roomNumber: e.target.value })}
-                    required
-                    className={styles.input}
-                  />
+                  {!useCustomRoom ? (
+                    <select
+                      value={newTenant.roomNumber}
+                      onChange={(e) => setNewTenant({ ...newTenant, roomNumber: e.target.value })}
+                      required
+                      className={styles.select}
+                    >
+                      <option value="" disabled>Select Room</option>
+                      {rooms.map((room) => (
+                        <option
+                          key={room.id || room._id || room.roomNumber}
+                          value={room.roomNumber}
+                          disabled={!room.available}
+                          style={{ color: room.available ? '#27ae60' : '#c0392b' }}
+                        >
+                          {room.roomNumber} {room.available ? '(Available)' : '(Occupied)'}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Enter Room Number"
+                      value={customRoom}
+                      onChange={(e) => setCustomRoom(e.target.value)}
+                      required
+                      className={styles.input}
+                    />
+                  )}
+                  <label className={styles.inlineToggle}>
+                    <input
+                      type="checkbox"
+                      checked={useCustomRoom}
+                      onChange={(e) => setUseCustomRoom(e.target.checked)}
+                    />
+                    <span> Enter custom room number</span>
+                  </label>
                   <input
                     type="number"
                     placeholder="Rent Amount"
@@ -147,6 +243,23 @@ const OwnerDashboard = () => {
                     required
                     className={styles.input}
                   />
+                  <div className={styles.dateInputGroup}>
+                    <input
+                      type="date"
+                      placeholder="Join Date"
+                      value={newTenant.joinDate}
+                      onChange={(e) => setNewTenant({ ...newTenant, joinDate: e.target.value })}
+                      required
+                      className={styles.input}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewTenant({ ...newTenant, joinDate: new Date().toISOString().split('T')[0] })}
+                      className={styles.todayButton}
+                    >
+                      Today
+                    </button>
+                  </div>
                   <button type="submit" disabled={loading} className={styles.submitButton}>
                     {loading ? "Adding..." : "Add Tenant"}
                   </button>
@@ -195,6 +308,41 @@ const OwnerDashboard = () => {
 
         {activeTab === "payments" && (
           <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2>Payment Records</h2>
+              <div className={styles.paymentControls}>
+                <select
+                  value={selectedTenant}
+                  onChange={(e) => setSelectedTenant(e.target.value)}
+                  className={styles.tenantSelect}
+                >
+                  <option value="">All Tenants</option>
+                  {tenants.map((tenant) => (
+                    <option key={tenant._id} value={tenant._id}>
+                      {tenant.name} - Room {tenant.roomNumber}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className={styles.tenantSelect}
+                />
+                <label className={styles.inlineToggle}>
+                  <input
+                    type="checkbox"
+                    checked={onlyUnpaid}
+                    onChange={(e) => setOnlyUnpaid(e.target.checked)}
+                  />
+                  <span>Only unpaid</span>
+                </label>
+                <button onClick={handleGeneratePayments} className={styles.generateButton}>
+                  Generate Payment Records
+                </button>
+              </div>
+            </div>
+            
             {loading ? (
               <div className={styles.loading}>Loading payments...</div>
             ) : (
@@ -203,22 +351,30 @@ const OwnerDashboard = () => {
                   <thead>
                     <tr>
                       <th>Tenant Name</th>
+                      <th>Room</th>
                       <th>Month</th>
+                      <th>Amount</th>
+                      <th>Due Date</th>
+                      <th>Paid Date</th>
                       <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payments.length === 0 ? (
                       <tr>
-                        <td colSpan="3" className={styles.empty}>
-                          No payment records found
+                        <td colSpan="7" className={styles.empty}>
+                          No payment records found. Click "Generate Payment Records" to create them.
                         </td>
                       </tr>
                     ) : (
                       payments.map((payment) => (
                         <tr key={payment.id}>
                           <td>{payment.tenant_name || "N/A"}</td>
+                          <td>{payment.room_number}</td>
                           <td>{payment.month}</td>
+                          <td>₹{payment.amount}</td>
+                          <td>{new Date(payment.dueDate).toLocaleDateString()}</td>
+                          <td>{payment.paidDate ? new Date(payment.paidDate).toLocaleDateString() : "-"}</td>
                           <td>
                             <span className={`${styles.badge} ${styles[payment.status]}`}>{payment.status}</span>
                           </td>
@@ -234,6 +390,31 @@ const OwnerDashboard = () => {
 
         {activeTab === "complaints" && (
           <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2>Maintenance Complaints</h2>
+              <div className={styles.paymentControls}>
+                <select
+                  value={selectedComplaintTenant}
+                  onChange={(e) => setSelectedComplaintTenant(e.target.value)}
+                  className={styles.tenantSelect}
+                >
+                  <option value="">All Tenants</option>
+                  {tenants.map((tenant) => (
+                    <option key={tenant._id} value={tenant._id}>
+                      {tenant.name} - Room {tenant.roomNumber}
+                    </option>
+                  ))}
+                </select>
+                <label className={styles.inlineToggle}>
+                  <input
+                    type="checkbox"
+                    checked={onlyPendingComplaints}
+                    onChange={(e) => setOnlyPendingComplaints(e.target.checked)}
+                  />
+                  <span>Only pending</span>
+                </label>
+              </div>
+            </div>
             {loading ? (
               <div className={styles.loading}>Loading complaints...</div>
             ) : (
@@ -245,6 +426,10 @@ const OwnerDashboard = () => {
                     <div key={complaint.id} className={styles.complaintCard}>
                       <div className={styles.complaintHeader}>
                         <span className={styles.complaintUser}>{complaint.tenant_name || "Unknown Tenant"}</span>
+                        <span className={styles.complaintRoom}>Room {complaint.room_number || "N/A"}</span>
+                        <span className={styles.complaintDate}>
+                          {new Date(complaint.createdAt || complaint.created_at).toLocaleDateString()}
+                        </span>
                         <span className={`${styles.badge} ${styles[complaint.status]}`}>{complaint.status}</span>
                       </div>
                       <p className={styles.complaintText}>{complaint.complaint}</p>

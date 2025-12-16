@@ -1,53 +1,32 @@
 import express from "express";
 import { authenticateToken } from "../Middlewares/authMiddleware.js";
-import userModel from "../models/user.js";
-import mongoose from "mongoose";
+import { Owner, Tenant } from "../models/user.js";
+import Complaint from "../models/complaint.js";
+import Room from "../models/room.js";
 
 const router = express.Router();
-
-// Complaint Model Schema (inline for now)
-const complaintSchema = new mongoose.Schema({
-    tenantId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "user",
-        required: true
-    },
-    ownerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "user",
-        required: true
-    },
-    complaint: {
-        type: String,
-        required: true
-    },
-    status: {
-        type: String,
-        enum: ["pending", "resolved"],
-        default: "pending"
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
-});
-
-const Complaint = mongoose.model("Complaint", complaintSchema);
 
 // Submit a complaint (Tenant only)
 router.post("/complaints", authenticateToken, async (req, res) => {
     try {
-        const { complaint } = req.body;
+        const { title, complaint, category, priority } = req.body;
 
-        const tenant = await userModel.findOne({ email: req.user.email });
-        if (!tenant || tenant.category !== "tenant") {
+        const tenant = await Tenant.findOne({ email: req.user.email });
+        if (!tenant) {
             return res.status(403).json({ message: "Only tenants can submit complaints" });
         }
+
+        // Get room and owner info
+        const room = await Room.findOne({ tenantId: tenant._id });
 
         const newComplaint = await Complaint.create({
             tenantId: tenant._id,
             ownerId: tenant.ownerId,
+            roomId: room?._id,
+            title: title || "General Complaint",
             complaint,
+            category: category || "other",
+            priority: priority || "medium",
             status: "pending"
         });
 
@@ -63,12 +42,13 @@ router.post("/complaints", authenticateToken, async (req, res) => {
 // Get tenant's own complaints
 router.get("/complaints/my-complaints", authenticateToken, async (req, res) => {
     try {
-        const tenant = await userModel.findOne({ email: req.user.email });
-        if (!tenant || tenant.category !== "tenant") {
+        const tenant = await Tenant.findOne({ email: req.user.email });
+        if (!tenant) {
             return res.status(403).json({ message: "Only tenants can view their complaints" });
         }
 
         const complaints = await Complaint.find({ tenantId: tenant._id })
+            .populate("roomId", "roomNumber")
             .sort({ createdAt: -1 });
 
         res.status(200).json(complaints);
@@ -80,22 +60,35 @@ router.get("/complaints/my-complaints", authenticateToken, async (req, res) => {
 // Get all complaints for owner
 router.get("/complaints", authenticateToken, async (req, res) => {
     try {
-        const owner = await userModel.findOne({ email: req.user.email });
-        if (!owner || owner.category !== "owner") {
+        const owner = await Owner.findOne({ email: req.user.email });
+        if (!owner) {
             return res.status(403).json({ message: "Only owners can view all complaints" });
         }
 
-        const complaints = await Complaint.find({ ownerId: owner._id })
-            .populate("tenantId", "name email roomNumber")
+        const { tenantId, status } = req.query;
+
+        const filter = { ownerId: owner._id };
+        if (tenantId) filter.tenantId = tenantId;
+        if (status) filter.status = status;
+
+        const complaints = await Complaint.find(filter)
+            .populate("tenantId", "fullname email phone")
+            .populate("roomId", "roomNumber")
             .sort({ createdAt: -1 });
 
         // Format response to match frontend expectations
         const formattedComplaints = complaints.map(c => ({
             id: c._id,
-            tenant_name: c.tenantId?.name || "Unknown",
+            tenant_name: c.tenantId?.fullname || "Unknown",
+            tenant_id: c.tenantId?._id,
+            room_number: c.roomId?.roomNumber || "N/A",
+            title: c.title,
             complaint: c.complaint,
+            category: c.category,
+            priority: c.priority,
             status: c.status,
-            createdAt: c.createdAt
+            createdAt: c.createdAt,
+            resolvedDate: c.resolvedDate
         }));
 
         res.status(200).json(formattedComplaints);
@@ -107,17 +100,24 @@ router.get("/complaints", authenticateToken, async (req, res) => {
 // Update complaint status (Owner only)
 router.patch("/complaints/:id", authenticateToken, async (req, res) => {
     try {
-        const { status } = req.body;
+        const { status, remarks, resolvedBy } = req.body;
         const { id } = req.params;
 
-        const owner = await userModel.findOne({ email: req.user.email });
-        if (!owner || owner.category !== "owner") {
+        const owner = await Owner.findOne({ email: req.user.email });
+        if (!owner) {
             return res.status(403).json({ message: "Only owners can update complaints" });
+        }
+
+        const updateData = { status };
+        if (remarks) updateData.remarks = remarks;
+        if (resolvedBy) updateData.resolvedBy = resolvedBy;
+        if (status === "resolved" || status === "closed") {
+            updateData.resolvedDate = new Date();
         }
 
         const complaint = await Complaint.findOneAndUpdate(
             { _id: id, ownerId: owner._id },
-            { status },
+            updateData,
             { new: true }
         );
 

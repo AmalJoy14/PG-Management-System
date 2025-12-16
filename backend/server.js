@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import authRoutes from "./Routes/authRoutes.js";
 import complaintRoutes from "./Routes/complaintRoutes.js";
 import paymentRoutes from "./Routes/paymentRoutes.js";
+import roomRoutes from "./Routes/roomRoutes.js";
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use(cors(corsOptions));
 app.use("/api", authRoutes);
 app.use("/api", complaintRoutes);
 app.use("/api", paymentRoutes);
+app.use("/api", roomRoutes);
 
 connectDB().then(() =>{
     app.listen(PORT, () => {
