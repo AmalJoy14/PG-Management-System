@@ -1,0 +1,67 @@
+# Backend .gitignore - ignores common Node, build, and editor files
+# Generated: added common backend ignores
+
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Build output
+dist/
+build/
+out/
+coverage/
+
+# Cache
+.eslintcache
+.parcel-cache/
+.cache/
+.next/
+.turbo/
+.vite/
+.node_repl_history
+
+# Dependency directories
+/.pnp
+.pnp.js
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Misc
+.firebase/
+.serverless/
+.nyc_output/
+.cache-loader/
+/.vscode-test/
+
+# Optional npm cache folders
+/.npm
+/.pnpm-debug.log
+
