@@ -351,3 +351,26 @@
 .pendingButton:hover {
   opacity: 0.9;
 }
+
+.dangerButton {
+  padding: 6px 12px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s;
+  margin-left: 8px;
+}
+
+.dangerButton:hover {
+  background: #c0392b;
+}
+
+.inlineEdit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

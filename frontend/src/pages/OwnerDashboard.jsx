@@ -27,8 +27,9 @@ const OwnerDashboard = () => {
     joinDate: "",
   })
   const [rooms, setRooms] = useState([])
-  const [useCustomRoom, setUseCustomRoom] = useState(false)
-  const [customRoom, setCustomRoom] = useState("")
+  const [editingTenantId, setEditingTenantId] = useState("")
+  const [editRentAmount, setEditRentAmount] = useState("")
+  const [editEffectiveMonth, setEditEffectiveMonth] = useState("")
 
   const tabs = [
     { id: "tenants", label: "Tenants" },
@@ -105,14 +106,9 @@ const OwnerDashboard = () => {
     setError("")
 
     try {
-      const payload = {
-        ...newTenant,
-        roomNumber: useCustomRoom ? customRoom : newTenant.roomNumber,
-      }
+      const payload = { ...newTenant }
       await axiosInstance.post("/add-tenant", payload)
       setNewTenant({ name: "", email: "", password: "", roomNumber: "", rentAmount: "", joinDate: "" })
-      setUseCustomRoom(false)
-      setCustomRoom("")
       setShowAddTenant(false)
       fetchData()
     } catch (err) {
@@ -140,6 +136,55 @@ const OwnerDashboard = () => {
       fetchData()
     } catch (err) {
       setError(err.response?.data?.message || "Failed to generate payments")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const startEditRent = (tenant) => {
+    setEditingTenantId(tenant._id)
+    setEditRentAmount(tenant.rentAmount)
+    // default effective month is next month
+    const now = new Date()
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const ym = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    setEditEffectiveMonth(ym)
+  }
+
+  const cancelEditRent = () => {
+    setEditingTenantId("")
+    setEditRentAmount("")
+    setEditEffectiveMonth("")
+  }
+
+  const saveEditRent = async (tenantId) => {
+    try {
+      setLoading(true)
+      setError("")
+      await axiosInstance.patch(`/tenants/${tenantId}/rent`, {
+        rentAmount: Number(editRentAmount),
+        effectiveFrom: editEffectiveMonth,
+      })
+      cancelEditRent()
+      await fetchData()
+      alert("Rent updated")
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to update rent")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const removeTenant = async (tenantId) => {
+    if (!confirm("Are you sure you want to remove this tenant?")) return
+    try {
+      setLoading(true)
+      setError("")
+      await axiosInstance.delete(`/tenants/${tenantId}`)
+      await fetchData()
+      alert("Tenant removed and room freed")
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to remove tenant")
     } finally {
       setLoading(false)
     }
@@ -198,43 +243,28 @@ const OwnerDashboard = () => {
                     minLength="6"
                     className={styles.input}
                   />
-                  {!useCustomRoom ? (
-                    <select
-                      value={newTenant.roomNumber}
-                      onChange={(e) => setNewTenant({ ...newTenant, roomNumber: e.target.value })}
-                      required
-                      className={styles.select}
-                    >
-                      <option value="" disabled>Select Room</option>
-                      {rooms.map((room) => (
+                  <select
+                    value={newTenant.roomNumber}
+                    onChange={(e) => setNewTenant({ ...newTenant, roomNumber: e.target.value })}
+                    required
+                    className={styles.select}
+                  >
+                    <option value="" disabled>Select Room</option>
+                    {Array.from({ length: 15 }, (_, i) => String(i + 1)).map((num) => {
+                      const existing = rooms.find((r) => String(r.roomNumber) === num)
+                      const available = existing ? !!existing.available : true
+                      return (
                         <option
-                          key={room.id || room._id || room.roomNumber}
-                          value={room.roomNumber}
-                          disabled={!room.available}
-                          style={{ color: room.available ? '#27ae60' : '#c0392b' }}
+                          key={num}
+                          value={num}
+                          disabled={!available}
+                          style={{ color: available ? '#27ae60' : '#c0392b' }}
                         >
-                          {room.roomNumber} {room.available ? '(Available)' : '(Occupied)'}
+                          {num} {available ? '(Available)' : '(Occupied)'}
                         </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      placeholder="Enter Room Number"
-                      value={customRoom}
-                      onChange={(e) => setCustomRoom(e.target.value)}
-                      required
-                      className={styles.input}
-                    />
-                  )}
-                  <label className={styles.inlineToggle}>
-                    <input
-                      type="checkbox"
-                      checked={useCustomRoom}
-                      onChange={(e) => setUseCustomRoom(e.target.checked)}
-                    />
-                    <span> Enter custom room number</span>
-                  </label>
+                      )
+                    })}
+                  </select>
                   <input
                     type="number"
                     placeholder="Rent Amount"
@@ -279,6 +309,7 @@ const OwnerDashboard = () => {
                       <th>Room Number</th>
                       <th>Rent Amount</th>
                       <th>Join Date</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -294,8 +325,41 @@ const OwnerDashboard = () => {
                           <td>{tenant.name}</td>
                           <td>{tenant.email}</td>
                           <td>{tenant.roomNumber}</td>
-                          <td>₹{tenant.rentAmount}</td>
+                          <td>
+                            {editingTenantId === tenant._id ? (
+                              <div className={styles.inlineEdit}>
+                                <input
+                                  type="number"
+                                  value={editRentAmount}
+                                  onChange={(e) => setEditRentAmount(e.target.value)}
+                                  className={styles.input}
+                                  style={{ maxWidth: 120 }}
+                                />
+                                <input
+                                  type="month"
+                                  value={editEffectiveMonth}
+                                  onChange={(e) => setEditEffectiveMonth(e.target.value)}
+                                  className={styles.input}
+                                  style={{ maxWidth: 150 }}
+                                />
+                                <button type="button" onClick={() => saveEditRent(tenant._id)} className={styles.submitButton}>Save</button>
+                                <button type="button" onClick={cancelEditRent} className={styles.markPaidButton}>Cancel</button>
+                              </div>
+                            ) : (
+                              <>
+                                ₹{tenant.rentAmount}
+                              </>
+                            )}
+                          </td>
                           <td>{new Date(tenant.joinDate).toLocaleDateString()}</td>
+                          <td>
+                            {editingTenantId === tenant._id ? null : (
+                              <>
+                                <button type="button" onClick={() => startEditRent(tenant)} className={styles.markPaidButton}>Update Rent</button>
+                                <button type="button" onClick={() => removeTenant(tenant._id)} className={styles.dangerButton}>Remove</button>
+                              </>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}

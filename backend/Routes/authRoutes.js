@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { Owner, Tenant } from "../models/user.js";
 import Room from "../models/room.js";
+import Payment from "../models/payment.js";
 import { authenticateToken } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -230,6 +231,79 @@ router.get("/tenants", authenticateToken, async (req, res) => {
         res.status(200).json({ tenants: tenantsWithRooms });
     } catch (error) {
         res.status(500).json({ message: "Error fetching tenants", error: error.message });
+    }
+});
+
+// Update Tenant Rent (Owner only)
+router.patch("/tenants/:tenantId/rent", authenticateToken, async (req, res) => {
+    try {
+        const owner = await Owner.findOne({ email: req.user.email });
+        if (!owner) {
+            return res.status(403).json({ message: "Only owners can update rent" });
+        }
+
+        const { tenantId } = req.params;
+        const { rentAmount, effectiveFrom } = req.body;
+
+        if (!rentAmount || Number(rentAmount) <= 0) {
+            return res.status(400).json({ message: "Valid rentAmount is required" });
+        }
+
+        const tenant = await Tenant.findOne({ _id: tenantId, ownerId: owner._id });
+        if (!tenant) {
+            return res.status(404).json({ message: "Tenant not found" });
+        }
+
+        tenant.rentAmount = Number(rentAmount);
+        await tenant.save();
+
+        // Optionally update unpaid future payments to new amount
+        if (effectiveFrom) {
+            await Payment.updateMany(
+                {
+                    tenantId: tenant._id,
+                    status: { $ne: "paid" },
+                    month: { $gte: effectiveFrom }
+                },
+                { $set: { amount: Number(rentAmount) } }
+            );
+        }
+
+        res.status(200).json({ message: "Rent updated successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Error updating rent", error: error.message });
+    }
+});
+
+// Remove Tenant (Owner only) - frees the room and deletes tenant account
+router.delete("/tenants/:tenantId", authenticateToken, async (req, res) => {
+    try {
+        const owner = await Owner.findOne({ email: req.user.email });
+        if (!owner) {
+            return res.status(403).json({ message: "Only owners can remove tenants" });
+        }
+
+        const { tenantId } = req.params;
+        const tenant = await Tenant.findOne({ _id: tenantId, ownerId: owner._id });
+        if (!tenant) {
+            return res.status(404).json({ message: "Tenant not found" });
+        }
+
+        // Free the room
+        const room = await Room.findOne({ tenantId: tenant._id, ownerId: owner._id });
+        if (room) {
+            room.tenantId = null;
+            room.status = "available";
+            room.currentOccupancy = 0;
+            await room.save();
+        }
+
+        // Permanently delete tenant account
+        await Tenant.deleteOne({ _id: tenant._id });
+
+        res.status(200).json({ message: "Tenant account deleted and room freed" });
+    } catch (error) {
+        res.status(500).json({ message: "Error removing tenant", error: error.message });
     }
 });
 
