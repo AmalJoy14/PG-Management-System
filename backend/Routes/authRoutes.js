@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { Owner, Tenant } from "../models/user.js";
 import Room from "../models/room.js";
 import Payment from "../models/payment.js";
+import Refund from "../models/refund.js";
 import { authenticateToken } from "../Middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -289,6 +290,34 @@ router.delete("/tenants/:tenantId", authenticateToken, async (req, res) => {
             return res.status(404).json({ message: "Tenant not found" });
         }
 
+        // Compute and create settlement (if not already exists)
+        const existingSettlement = await Refund.findOne({ tenantId: tenant._id, ownerId: owner._id });
+        if (!existingSettlement) {
+            const depositAmount = Number(tenant.securityDeposit || 0);
+            const unpaidPayments = await Payment.find({ tenantId: tenant._id, status: { $ne: "paid" } });
+            const unpaidDue = unpaidPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+            const totalDeductions = unpaidDue; // other deductions can be added later via approval step
+            const refundableAmount = Math.max(0, depositAmount - totalDeductions);
+            const balanceDueFromTenant = Math.max(0, totalDeductions - depositAmount);
+
+            const roomForSettlement = await Room.findOne({ tenantId: tenant._id, ownerId: owner._id });
+
+            await Refund.create({
+                tenantId: tenant._id,
+                ownerId: owner._id,
+                roomId: roomForSettlement?._id,
+                tenantName: tenant.fullname,
+                tenantEmail: tenant.email,
+                roomNumber: roomForSettlement?.roomNumber?.toString?.(),
+                depositAmount,
+                deductions: { unpaidDue },
+                refundableAmount,
+                balanceDueFromTenant,
+                status: "initiated",
+            });
+        }
+
         // Free the room
         const room = await Room.findOne({ tenantId: tenant._id, ownerId: owner._id });
         if (room) {
@@ -301,9 +330,68 @@ router.delete("/tenants/:tenantId", authenticateToken, async (req, res) => {
         // Permanently delete tenant account
         await Tenant.deleteOne({ _id: tenant._id });
 
-        res.status(200).json({ message: "Tenant account deleted and room freed" });
+        res.status(200).json({ message: "Tenant account deleted, room freed, and settlement initiated" });
     } catch (error) {
         res.status(500).json({ message: "Error removing tenant", error: error.message });
+    }
+});
+
+// Move Out Tenant (Owner only) - frees the room and initiates settlement, without deleting account
+router.post("/tenants/:tenantId/move-out", authenticateToken, async (req, res) => {
+    try {
+        const owner = await Owner.findOne({ email: req.user.email });
+        if (!owner) {
+            return res.status(403).json({ message: "Only owners can move out tenants" });
+        }
+
+        const { tenantId } = req.params;
+        const tenant = await Tenant.findOne({ _id: tenantId, ownerId: owner._id });
+        if (!tenant) {
+            return res.status(404).json({ message: "Tenant not found" });
+        }
+
+        // Create or find settlement
+        let refund = await Refund.findOne({ tenantId: tenant._id, ownerId: owner._id });
+        if (!refund) {
+            const depositAmount = Number(tenant.securityDeposit || 0);
+            const unpaidPayments = await Payment.find({ tenantId: tenant._id, status: { $ne: "paid" } });
+            const unpaidDue = unpaidPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const totalDeductions = unpaidDue;
+            const refundableAmount = Math.max(0, depositAmount - totalDeductions);
+            const balanceDueFromTenant = Math.max(0, totalDeductions - depositAmount);
+            const roomForSettlement = await Room.findOne({ tenantId: tenant._id, ownerId: owner._id });
+
+            refund = await Refund.create({
+                tenantId: tenant._id,
+                ownerId: owner._id,
+                roomId: roomForSettlement?._id,
+                tenantName: tenant.fullname,
+                tenantEmail: tenant.email,
+                roomNumber: roomForSettlement?.roomNumber?.toString?.(),
+                depositAmount,
+                deductions: { unpaidDue },
+                refundableAmount,
+                balanceDueFromTenant,
+                status: "initiated",
+            });
+        }
+
+        // Free the room
+        const room = await Room.findOne({ tenantId: tenant._id, ownerId: owner._id });
+        if (room) {
+            room.tenantId = null;
+            room.status = "available";
+            room.currentOccupancy = 0;
+            await room.save();
+        }
+
+        // Mark tenant inactive instead of deleting
+        tenant.status = "inactive";
+        await tenant.save();
+
+        res.status(200).json({ message: "Tenant moved out, room freed, and settlement initiated", refund });
+    } catch (error) {
+        res.status(500).json({ message: "Error moving out tenant", error: error.message });
     }
 });
 

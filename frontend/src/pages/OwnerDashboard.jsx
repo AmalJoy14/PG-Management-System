@@ -24,17 +24,20 @@ const OwnerDashboard = () => {
     password: "",
     roomNumber: "",
     rentAmount: "",
+    securityDeposit: "",
     joinDate: "",
   })
   const [rooms, setRooms] = useState([])
   const [editingTenantId, setEditingTenantId] = useState("")
   const [editRentAmount, setEditRentAmount] = useState("")
-  const [editEffectiveMonth, setEditEffectiveMonth] = useState("")
+  const [settlements, setSettlements] = useState([])
+  const [newSettlement, setNewSettlement] = useState({ tenantId: "", damages: "", cleaning: "", noticePenalty: "", other: "", notes: "" })
 
   const tabs = [
     { id: "tenants", label: "Tenants" },
     { id: "payments", label: "Payments" },
     { id: "complaints", label: "Complaints" },
+    { id: "settlements", label: "Settlements" },
   ]
 
   useEffect(() => {
@@ -92,6 +95,15 @@ const OwnerDashboard = () => {
 
         const response = await axiosInstance.get(url)
         setComplaints(response.data)
+      } else if (activeTab === "settlements") {
+        // Load tenants for dropdown
+        const tenantsResponse = await axiosInstance.get("/tenants")
+        setTenants(tenantsResponse.data.tenants || [])
+
+        const params = new URLSearchParams()
+        if (newSettlement.tenantId) params.append("tenantId", newSettlement.tenantId)
+        const response = await axiosInstance.get(params.toString() ? `/settlements?${params.toString()}` : "/settlements")
+        setSettlements(response.data)
       }
     } catch (err) {
       setError(err.response?.data?.message || "Failed to fetch data")
@@ -108,7 +120,7 @@ const OwnerDashboard = () => {
     try {
       const payload = { ...newTenant }
       await axiosInstance.post("/add-tenant", payload)
-      setNewTenant({ name: "", email: "", password: "", roomNumber: "", rentAmount: "", joinDate: "" })
+      setNewTenant({ name: "", email: "", password: "", roomNumber: "", rentAmount: "", securityDeposit: "", joinDate: "" })
       setShowAddTenant(false)
       fetchData()
     } catch (err) {
@@ -144,17 +156,11 @@ const OwnerDashboard = () => {
   const startEditRent = (tenant) => {
     setEditingTenantId(tenant._id)
     setEditRentAmount(tenant.rentAmount)
-    // default effective month is next month
-    const now = new Date()
-    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const ym = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
-    setEditEffectiveMonth(ym)
   }
 
   const cancelEditRent = () => {
     setEditingTenantId("")
     setEditRentAmount("")
-    setEditEffectiveMonth("")
   }
 
   const saveEditRent = async (tenantId) => {
@@ -163,7 +169,6 @@ const OwnerDashboard = () => {
       setError("")
       await axiosInstance.patch(`/tenants/${tenantId}/rent`, {
         rentAmount: Number(editRentAmount),
-        effectiveFrom: editEffectiveMonth,
       })
       cancelEditRent()
       await fetchData()
@@ -175,16 +180,53 @@ const OwnerDashboard = () => {
     }
   }
 
-  const removeTenant = async (tenantId) => {
-    if (!confirm("Are you sure you want to remove this tenant?")) return
+  const handleInitiateSettlement = async (e) => {
+    e.preventDefault()
     try {
       setLoading(true)
       setError("")
-      await axiosInstance.delete(`/tenants/${tenantId}`)
+      const payload = {
+        tenantId: newSettlement.tenantId,
+        damages: Number(newSettlement.damages || 0),
+        cleaning: Number(newSettlement.cleaning || 0),
+        noticePenalty: Number(newSettlement.noticePenalty || 0),
+        other: Number(newSettlement.other || 0),
+        notes: newSettlement.notes || undefined,
+      }
+      await axiosInstance.post("/settlements/initiate", payload)
+      setNewSettlement({ tenantId: "", damages: "", cleaning: "", noticePenalty: "", other: "", notes: "" })
       await fetchData()
-      alert("Tenant removed and room freed")
+      alert("Settlement initiated")
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to remove tenant")
+      setError(err.response?.data?.message || "Failed to initiate settlement")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleApproveSettlement = async (id) => {
+    try {
+      setLoading(true)
+      setError("")
+      await axiosInstance.patch(`/settlements/${id}/approve`, {})
+      await fetchData()
+      alert("Settlement approved")
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to approve settlement")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePaySettlement = async (id) => {
+    try {
+      setLoading(true)
+      setError("")
+      await axiosInstance.patch(`/settlements/${id}/pay`, { paymentMethod: "upi" })
+      await fetchData()
+      alert("Settlement marked paid")
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to mark settlement paid")
     } finally {
       setLoading(false)
     }
@@ -273,6 +315,13 @@ const OwnerDashboard = () => {
                     required
                     className={styles.input}
                   />
+                  <input
+                    type="number"
+                    placeholder="Security Deposit (optional)"
+                    value={newTenant.securityDeposit}
+                    onChange={(e) => setNewTenant({ ...newTenant, securityDeposit: e.target.value })}
+                    className={styles.input}
+                  />
                   <div className={styles.dateInputGroup}>
                     <input
                       type="date"
@@ -335,13 +384,6 @@ const OwnerDashboard = () => {
                                   className={styles.input}
                                   style={{ maxWidth: 120 }}
                                 />
-                                <input
-                                  type="month"
-                                  value={editEffectiveMonth}
-                                  onChange={(e) => setEditEffectiveMonth(e.target.value)}
-                                  className={styles.input}
-                                  style={{ maxWidth: 150 }}
-                                />
                                 <button type="button" onClick={() => saveEditRent(tenant._id)} className={styles.submitButton}>Save</button>
                                 <button type="button" onClick={cancelEditRent} className={styles.markPaidButton}>Cancel</button>
                               </div>
@@ -356,7 +398,6 @@ const OwnerDashboard = () => {
                             {editingTenantId === tenant._id ? null : (
                               <>
                                 <button type="button" onClick={() => startEditRent(tenant)} className={styles.markPaidButton}>Update Rent</button>
-                                <button type="button" onClick={() => removeTenant(tenant._id)} className={styles.dangerButton}>Remove</button>
                               </>
                             )}
                           </td>
@@ -367,6 +408,83 @@ const OwnerDashboard = () => {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "settlements" && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2>Deposit Settlements</h2>
+            </div>
+
+            <div className={styles.formCard}>
+              <h3>Initiate Settlement</h3>
+              <form onSubmit={handleInitiateSettlement} className={styles.form}>
+                <select
+                  value={newSettlement.tenantId}
+                  onChange={(e) => setNewSettlement({ ...newSettlement, tenantId: e.target.value })}
+                  required
+                  className={styles.select}
+                >
+                  <option value="" disabled>Select Tenant</option>
+                  {tenants.map((t) => (
+                    <option key={t._id} value={t._id}>{t.name} - Room {t.roomNumber}</option>
+                  ))}
+                </select>
+                <input type="number" className={styles.input} placeholder="Damages" value={newSettlement.damages} onChange={(e) => setNewSettlement({ ...newSettlement, damages: e.target.value })} />
+                <input type="number" className={styles.input} placeholder="Cleaning" value={newSettlement.cleaning} onChange={(e) => setNewSettlement({ ...newSettlement, cleaning: e.target.value })} />
+                <input type="number" className={styles.input} placeholder="Notice Penalty" value={newSettlement.noticePenalty} onChange={(e) => setNewSettlement({ ...newSettlement, noticePenalty: e.target.value })} />
+                <input type="number" className={styles.input} placeholder="Other" value={newSettlement.other} onChange={(e) => setNewSettlement({ ...newSettlement, other: e.target.value })} />
+                <input type="text" className={styles.input} placeholder="Notes (optional)" value={newSettlement.notes} onChange={(e) => setNewSettlement({ ...newSettlement, notes: e.target.value })} />
+                <button type="submit" className={styles.submitButton} disabled={loading}>{loading ? "Submitting..." : "Initiate"}</button>
+              </form>
+            </div>
+
+            <div className={styles.table}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tenant</th>
+                    <th>Room</th>
+                    <th>Deposit</th>
+                    <th>Unpaid Due</th>
+                    <th>Other Deductions</th>
+                    <th>Refund</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlements.length === 0 ? (
+                    <tr><td colSpan="8" className={styles.empty}>No settlements yet</td></tr>
+                  ) : (
+                    settlements.map((s) => {
+                      const unpaid = s.deductions?.unpaidDue || 0
+                      const others = (s.deductions?.damages || 0) + (s.deductions?.cleaning || 0) + (s.deductions?.noticePenalty || 0) + (s.deductions?.other || 0)
+                      return (
+                        <tr key={s._id}>
+                          <td>{s.tenantId?.fullname || s.tenantName || "N/A"}</td>
+                          <td>{s.roomId?.roomNumber || s.roomNumber || "N/A"}</td>
+                          <td>₹{s.depositAmount}</td>
+                          <td>₹{unpaid}</td>
+                          <td>₹{others}</td>
+                          <td>₹{s.refundableAmount}</td>
+                          <td><span className={`${styles.badge} ${styles[s.status === 'paid' ? 'paid' : (s.status === 'approved' ? 'pending' : 'overdue')]}`}>{s.status}</span></td>
+                          <td>
+                            {s.status === 'initiated' && (
+                              <button className={styles.markPaidButton} onClick={() => handleApproveSettlement(s._id)}>Approve</button>
+                            )}
+                            {s.status === 'approved' && (
+                              <button className={styles.submitButton} onClick={() => handlePaySettlement(s._id)}>Mark Paid</button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
